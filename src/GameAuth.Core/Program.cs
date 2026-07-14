@@ -1,4 +1,3 @@
-using System.Text;
 using GameAuth.Core.Configuration;
 using GameAuth.Core.Security;
 using GameAuth.Core.Services;
@@ -17,11 +16,14 @@ builder.Services.AddServiceDefaults(builder.Configuration, ServiceName);
 builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+var jwtKeyProvider = new JwtKeyProvider(jwtOptions);
+
+builder.Services.AddSingleton(jwtKeyProvider);
 builder.Services.AddSingleton<IPasswordHasher, Argon2PasswordHasher>();
 builder.Services.AddSingleton<ITokenService, JwtTokenService>();
 builder.Services.AddSingleton<IMfaService, TotpMfaService>();
-
-var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -34,7 +36,8 @@ builder.Services
             ValidateAudience = true,
             ValidAudience = jwtOptions.Audience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey)),
+            IssuerSigningKey = jwtKeyProvider.ValidationKey,
+            ValidAlgorithms = new[] { jwtKeyProvider.Algorithm },
             ValidateLifetime = true
         };
     });

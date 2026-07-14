@@ -1,7 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
 using GameAuth.Core.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -20,12 +19,12 @@ public interface ITokenService
 public class JwtTokenService : ITokenService
 {
     private readonly JwtOptions _options;
-    private readonly SymmetricSecurityKey _signingKey;
+    private readonly JwtKeyProvider _keyProvider;
 
-    public JwtTokenService(IOptions<JwtOptions> options)
+    public JwtTokenService(IOptions<JwtOptions> options, JwtKeyProvider keyProvider)
     {
         _options = options.Value;
-        _signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey));
+        _keyProvider = keyProvider;
     }
 
     public GeneratedToken GenerateAccessToken(long userId, string username, string sessionId, IEnumerable<string>? roles = null)
@@ -45,15 +44,13 @@ public class JwtTokenService : ITokenService
             claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
         }
 
-        var credentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
-
         var token = new JwtSecurityToken(
             issuer: _options.Issuer,
             audience: _options.Audience,
             claims: claims,
             notBefore: DateTime.UtcNow,
             expires: expiresAt,
-            signingCredentials: credentials);
+            signingCredentials: _keyProvider.SigningCredentials);
 
         return new GeneratedToken(new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
     }
@@ -73,7 +70,8 @@ public class JwtTokenService : ITokenService
             ValidateAudience = true,
             ValidAudience = _options.Audience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = _signingKey,
+            IssuerSigningKey = _keyProvider.ValidationKey,
+            ValidAlgorithms = new[] { _keyProvider.Algorithm },
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(30)
         };

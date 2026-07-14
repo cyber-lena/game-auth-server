@@ -110,7 +110,7 @@ GameAuthServer/
 
 ### GameAuth.Core (Authentication)
 - `Argon2PasswordHasher` - Argon2id hashing with per-hash salt and constant-time verification
-- `JwtTokenService` - access token generation (HS256) + refresh token generation + validation
+- `JwtTokenService` - access token generation (RS256, HS256 fallback) + refresh token generation + validation
 - `TotpMfaService` - TOTP secret generation and code validation (Otp.NET)
 - `AuthGrpcService` - Register, Login (with MFA), ValidateToken, Logout, RefreshToken, InitiateMfaChallenge
 - Publishes `UserRegisteredEvent` / `UserLoggedInEvent`; JWT bearer auth configured
@@ -135,7 +135,7 @@ GameAuthServer/
 | Messaging | RabbitMQ + MassTransit |
 | RPC | gRPC (Grpc.AspNetCore) |
 | Rate limiting | AspNetCoreRateLimit + Redis distributed store |
-| Security | JWT (HS256), Argon2id (Konscious), TOTP (Otp.NET) |
+| Security | JWT (RS256, HS256 fallback), Argon2id (Konscious), TOTP (Otp.NET) |
 | Observability | OpenTelemetry, Prometheus, Tempo, Grafana, Serilog |
 
 Exact versions are pinned centrally in `Directory.Packages.props`.
@@ -265,7 +265,9 @@ Each service reads configuration from `appsettings.json`, overridable by environ
   "Jwt": {
     "Issuer": "GameAuth",
     "Audience": "GameAuth.Clients",
-    "SigningKey": "CHANGE_ME_TO_A_SECURE_32_PLUS_CHARACTER_SIGNING_KEY",
+    "Algorithm": "RS256",
+    "PrivateKeyPath": "keys/jwt-private.pem",
+    "PublicKeyPath": "keys/jwt-public.pem",
     "AccessTokenMinutes": 15,
     "RefreshTokenDays": 7
   },
@@ -274,7 +276,9 @@ Each service reads configuration from `appsettings.json`, overridable by environ
 }
 ```
 
-> Set a strong `Jwt:SigningKey` (>= 32 chars) for the Core service before any real deployment.
+> Generate an RSA key pair for the Core service before any real deployment (see
+> [`src/GameAuth.Core/keys/README.md`](src/GameAuth.Core/keys/README.md)). To use symmetric signing
+> instead, set `Jwt:Algorithm` to `HS256` and provide a `Jwt:SigningKey` of at least 32 characters.
 
 ## Getting Started
 
@@ -332,7 +336,7 @@ All current tests are unit tests (12 total). End-to-end gRPC integration tests a
 
 Implemented:
 - Argon2id password hashing (per-hash salt, constant-time verification)
-- JWT access tokens (HS256) + opaque refresh tokens
+- JWT access tokens (RS256 asymmetric signing, HS256 fallback) + opaque refresh tokens
 - TOTP-based MFA (Otp.NET)
 - Distributed token revocation and session storage via Redis
 - Redis-backed distributed IP rate limiting (enforced consistently across replicas)
@@ -346,7 +350,6 @@ Rate limiting is wired centrally in `ServiceDefaults`, so all services inherit i
 
 The following items from the original design are not yet implemented:
 - **Integration tests** - only unit tests exist today
-- **RS256 JWT signing** - current implementation uses symmetric HS256
 - **MFA backup codes**
 - **Jaeger UI** - traces are stored in Tempo and viewed via Grafana instead
 - **Kubernetes manifests** - deployment is Docker Compose only (K8s is a future phase)
