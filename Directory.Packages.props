@@ -53,6 +53,7 @@
 
 	<!-- Rate Limiting -->
 	<PackageVersion Include="AspNetCoreRateLimit" Version="5.0.0" />
+	<PackageVersion Include="AspNetCoreRateLimit.Redis" Version="2.0.0" />
 
 	<!-- Resilience -->
 	<PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />

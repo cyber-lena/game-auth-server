@@ -1,273 +1,355 @@
 # GameAuthServer - Multi-Million User Game Authentication Server
 
+A production-grade, microservices-based authentication platform built on **.NET 10**, designed for
+high-throughput game backends with full observability, event-driven integration, and container-based deployment.
+
+## Table of Contents
+- [Architecture Overview](#architecture-overview)
+- [Solution Structure](#solution-structure)
+- [Implemented Components](#implemented-components)
+- [Technology Stack](#technology-stack)
+- [Database Schema](#database-schema)
+- [Communication Patterns](#communication-patterns)
+- [Observability](#observability)
+- [Configuration](#configuration)
+- [Getting Started](#getting-started)
+- [Testing](#testing)
+- [Security Features](#security-features)
+- [Known Gaps and Roadmap](#known-gaps-and-roadmap)
+
 ## Architecture Overview
 
-Production-grade, microservices-ready authentication system using .NET 10 targeting Kubernetes deployment with complete observability.
+Three independently deployable services (Auth, Profile, Audit) share a common Infrastructure layer, gRPC
+contracts, and cross-cutting service defaults. Services communicate synchronously via **gRPC** and
+asynchronously via a **MassTransit/RabbitMQ** event bus. State is split between **PostgreSQL** (durable)
+and **Redis** (sessions, token revocation, profile cache). Every service emits **OpenTelemetry** traces
+and metrics and structured **Serilog** logs.
+
+```mermaid
+flowchart LR
+    Client["Client / Game Backend"] -->|gRPC Login/Register| Core["GameAuth.Core (Auth)"]
+    Core -->|UserRegistered / UserLoggedIn events| MQ["RabbitMQ (MassTransit)"]
+    MQ --> Profile["GameAuth.ProfileService"]
+    MQ --> Audit["GameAuth.AuditService"]
+    Core --> PG[("PostgreSQL")]
+    Core --> Redis[("Redis")]
+    Profile --> Redis
+    Audit --> PG
+    Core -.OTLP.-> OTEL["OTel Collector"]
+    Profile -.OTLP.-> OTEL
+    Audit -.OTLP.-> OTEL
+    OTEL --> Prom["Prometheus"]
+    OTEL --> Tempo["Tempo"]
+    Prom --> Graf["Grafana"]
+    Tempo --> Graf
+```
 
 ### Key Features
-- ✅ OAuth2/OpenID Connect with JWT tokens + TOTP MFA
-- ✅ Hybrid data layer: PostgreSQL (persistent) + Redis (sessions, revocation, caching)
-- ✅ gRPC inter-service communication
-- ✅ MassTransit event bus with RabbitMQ
-- ✅ OpenTelemetry distributed tracing & metrics
-- ✅ Prometheus + Tempo + Grafana observability stack
-- ✅ Built-in rate limiting with Redis backend
-- ✅ Circuit breakers & resilience patterns
+- Credential auth with **JWT** access/refresh tokens + **TOTP MFA**
+- Hybrid data layer: **PostgreSQL** (persistent) + **Redis** (sessions, revocation, caching)
+- **gRPC** inter-service communication with generated contracts
+- **MassTransit** event bus over **RabbitMQ**
+- **OpenTelemetry** distributed tracing and metrics, exported to Prometheus + Tempo
+- **Serilog** structured logging with trace/span correlation
+- Shared **ServiceDefaults** for consistent middleware, telemetry, and health checks
+- Central NuGet package management via `Directory.Packages.props`
 
 ## Solution Structure
 
 ```
 GameAuthServer/
 ├── src/
-│   ├── GameAuth.Shared/          ✅ COMPLETED - Common DTOs, events, exceptions
-│   ├── GameAuth.Protos/          ✅ COMPLETED - gRPC service definitions  
-│   ├── GameAuth.Infrastructure/  🔄 IN PROGRESS - Data access, caching, event bus
-│   ├── GameAuth.Core/            📋 PENDING - Main authentication service
-│   ├── GameAuth.ProfileService/  📋 PENDING - User profile management
-│   └── GameAuth.AuditService/    📋 PENDING - Audit logging & compliance
-└── deployment/
-	├── docker-compose.yml        📋 PENDING - Full local stack
-	├── grafana/                  📋 PENDING - Dashboards & data sources
-	├── otel-collector/          📋 PENDING - Collector configuration
-	└── prometheus/              📋 PENDING - Scrape configuration
+│   ├── GameAuth.Shared/          Common DTOs, domain events, exceptions, interfaces
+│   ├── GameAuth.Protos/          gRPC/protobuf service definitions
+│   ├── GameAuth.Infrastructure/  EF Core, repositories, Redis caching, MassTransit, migrations
+│   ├── GameAuth.ServiceDefaults/ OTel, Serilog, correlation-id/exception middleware, rate limiting
+│   ├── GameAuth.Core/            Authentication service (JWT, MFA, gRPC)
+│   ├── GameAuth.ProfileService/  User profile management (gRPC + event consumer)
+│   └── GameAuth.AuditService/    Audit logging (gRPC + event consumers)
+├── tests/
+│   ├── GameAuth.Core.Tests/           Password hashing and MFA unit tests
+│   ├── GameAuth.Infrastructure.Tests/ Repository tests (SQLite in-memory)
+│   └── GameAuth.ProfileService.Tests/ Profile model tests
+├── deploy/
+│   ├── docker-compose.yml             Full local stack (services + infra + observability)
+│   ├── GameAuth.*.Dockerfile          Per-service multi-stage builds
+│   └── observability/                 OTel Collector, Tempo, Prometheus, Grafana provisioning
+├── Directory.Packages.props           Central package version management
+└── GameAuthServer.slnx                Solution file
 ```
 
-## Completed Components
+## Implemented Components
 
-### GameAuth.Shared ✅
-- **Constants**: Auth, Error codes, gRPC service names
-- **DTOs**: Login/Register/Refresh requests & responses
-- **Events**: 7 domain events (UserRegistered, UserLoggedIn, MfaChallengeInitiated, TokenGenerated, ProfileUpdated, SecurityEventTriggered, ServiceHealth)
+### GameAuth.Shared
+- **Interfaces**: `IRepository<T>`, `IUnitOfWork`, `ICacheService`, `IEventBus`, `IServiceClient`
+- **Events**: `BaseEvent` + 7 domain events (UserRegistered, UserLoggedIn, MfaChallengeInitiated,
+  TokenGenerated, UserProfileUpdated, SecurityEventTriggered, ServiceHealth)
 - **Exceptions**: AuthException, ValidationException, UnauthorizedException, ForbiddenException, RateLimitException
-- **Interfaces**: IRepository, IUnitOfWork, ICacheService, IEventBus, IServiceClient
-- **Models**: Result<T>, PagedResult<T>
+- **Models**: `Result<T>`, `PagedResult<T>`
 
-### GameAuth.Protos ✅
-- **auth/auth_service.proto**: Login, Register, ValidateToken, RefreshToken, Logout, InitiateMfaChallenge
-- **profile/profile_service.proto**: GetProfile, UpdateProfile, GetSettings, UpdateSettings
-- **audit/audit_service.proto**: LogEvent, QueryLogs, GetSecurityEvents
-- **common/common.proto**: Shared message types (UserIdentity, ErrorDetails, Timestamp)
+### GameAuth.Protos
+- `auth/auth_service.proto` - Login, Register, ValidateToken, RefreshToken, Logout, InitiateMfaChallenge
+- `profile/profile_service.proto` - GetProfile, UpdateProfile, GetSettings, UpdateSettings
+- `audit/audit_service.proto` - LogEvent, QueryLogs, GetSecurityEvents
+- `common/common.proto` - Shared types (UserIdentity, ErrorDetails, TimestampMessage, Empty)
+- Generated with `GrpcServices=Both` (server base classes + typed clients)
+
+### GameAuth.Infrastructure
+- **EF Core** `GameAuthDbContext` with snake_case mappings for users, credentials, mfa_settings, sessions, audit_logs
+- **Repositories**: `BaseRepository<T>` and `UserRepository` (username/email lookups, credential/MFA includes)
+- **Caching**: `RedisCacheService`, `SessionCacheService` (JSON `SessionState`), `TokenRevocationService`
+- **Event bus**: `EventPublisher` (implements `IEventBus`) + `MassTransitConfiguration` (RabbitMQ)
+- **DI**: `AddInfrastructure(configuration, configureConsumers)` single entry point
+- **Migration**: `InitialCreate` (Npgsql/PostgreSQL)
+
+### GameAuth.ServiceDefaults
+- `AddServiceDefaults` / `UseServiceDefaults` - OTel, health checks, correlation-id and exception middleware
+- `UseSerilogDefaults` - structured logging enriched with trace/span context
+- OpenTelemetry tracing/metrics with Prometheus scraping and optional OTLP export
+- `AddRateLimitingDefaults` / `UseRateLimitingDefaults` - Redis-backed distributed IP rate limiting (AspNetCoreRateLimit) shared across all services and replicas
+
+### GameAuth.Core (Authentication)
+- `Argon2PasswordHasher` - Argon2id hashing with per-hash salt and constant-time verification
+- `JwtTokenService` - access token generation (HS256) + refresh token generation + validation
+- `TotpMfaService` - TOTP secret generation and code validation (Otp.NET)
+- `AuthGrpcService` - Register, Login (with MFA), ValidateToken, Logout, RefreshToken, InitiateMfaChallenge
+- Publishes `UserRegisteredEvent` / `UserLoggedInEvent`; JWT bearer auth configured
+
+### GameAuth.ProfileService
+- `RedisProfileStore` - JSON-backed profile and settings storage
+- `ProfileGrpcService` - GetProfile, UpdateProfile, GetSettings, UpdateSettings
+- `UserRegisteredConsumer` - auto-provisions a default profile on registration
+
+### GameAuth.AuditService
+- `AuditLogStore` - EF-backed persistence and paged querying
+- `AuditGrpcService` - LogEvent, QueryLogs, GetSecurityEvents
+- Consumers for `UserLoggedInEvent`, `UserRegisteredEvent`, `SecurityEventTriggeredEvent`
 
 ## Technology Stack
 
-### Core Frameworks
-- .NET 10
-- ASP.NET Core Web API
-- Entity Framework Core 10
-- gRPC (Grpc.AspNetCore 2.67)
+| Area | Technology |
+|------|------------|
+| Runtime | .NET 10, ASP.NET Core |
+| Persistence | Entity Framework Core 10, Npgsql / PostgreSQL |
+| Caching | Redis (StackExchange.Redis) |
+| Messaging | RabbitMQ + MassTransit |
+| RPC | gRPC (Grpc.AspNetCore) |
+| Rate limiting | AspNetCoreRateLimit + Redis distributed store |
+| Security | JWT (HS256), Argon2id (Konscious), TOTP (Otp.NET) |
+| Observability | OpenTelemetry, Prometheus, Tempo, Grafana, Serilog |
 
-### Data & Caching
-- PostgreSQL 16 (Npgsql 8.0)
-- Redis 7 (StackExchange.Redis 2.8)
-
-### Messaging
-- RabbitMQ 3.13
-- MassTransit 8.2
-
-### Observability
-- OpenTelemetry 1.10
-- Prometheus
-- Tempo (trace storage)
-- Jaeger (trace UI)
-- Grafana
-- Serilog
-
-### Resilience
-- Polly 8.4 (circuit breakers, retries)
-- AspNetCoreRateLimit 5.1
+Exact versions are pinned centrally in `Directory.Packages.props`.
 
 ## Database Schema
 
-### Users Table
+Managed by EF Core (`GameAuthDbContext`) and the `InitialCreate` migration. Tables use snake_case naming.
+
+### users
 ```sql
 CREATE TABLE users (
-	id BIGSERIAL PRIMARY KEY,
-	username VARCHAR(255) UNIQUE NOT NULL,
-	email VARCHAR(255) UNIQUE NOT NULL,
-	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-### Credentials Table
+### credentials
 ```sql
 CREATE TABLE credentials (
-	id BIGSERIAL PRIMARY KEY,
-	user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-	password_hash VARCHAR(255) NOT NULL,
-	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-### MFA Settings Table
+### mfa_settings
 ```sql
 CREATE TABLE mfa_settings (
-	id BIGSERIAL PRIMARY KEY,
-	user_id BIGINT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-	mfa_type VARCHAR(50),
-	mfa_secret VARCHAR(255),
-	backup_codes TEXT[],
-	verified BOOLEAN DEFAULT FALSE,
-	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    mfa_type VARCHAR(50),
+    mfa_secret VARCHAR(255),
+    backup_codes TEXT[],
+    verified BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-### Audit Logs Table
+### sessions
+```sql
+CREATE TABLE sessions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    session_id VARCHAR(255) NOT NULL,
+    refresh_token VARCHAR(512) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    ip_address VARCHAR(64),
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### audit_logs
 ```sql
 CREATE TABLE audit_logs (
-	id BIGSERIAL PRIMARY KEY,
-	user_id BIGINT REFERENCES users(id),
-	event_type VARCHAR(100) NOT NULL,
-	event_source VARCHAR(50) NOT NULL,
-	ip_address INET,
-	user_agent TEXT,
-	status VARCHAR(50),
-	timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id),
+    event_type VARCHAR(100) NOT NULL,
+    event_source VARCHAR(50) NOT NULL,
+    ip_address VARCHAR(64),
+    user_agent TEXT,
+    status VARCHAR(50),
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_audit_logs_user_id_timestamp ON audit_logs(user_id, timestamp);
 CREATE INDEX idx_audit_logs_event_type_timestamp ON audit_logs(event_type, timestamp);
 ```
 
+> Note: active sessions and revoked tokens are also cached in Redis; the `sessions` table provides
+> durable session records.
+
 ## Communication Patterns
 
 ### Synchronous (gRPC)
-- ProfileService → AuthService.ValidateToken(token)
-- External → AuthService.Login(credentials)
+- External client -> `AuthService.Login` / `Register` / `RefreshToken`
+- Service-to-service -> `AuthService.ValidateToken(token)`
 
-### Asynchronous (Event Bus)
+### Asynchronous (event bus)
 ```
-POST /auth/register
-  ↓
+Register (gRPC)
+   |
 AuthService publishes UserRegisteredEvent
-  ├→ AuditService consumes → Log to DB
-  └→ ProfileService consumes → Create default profile
+   |-> AuditService consumer  -> writes audit_logs row
+   |-> ProfileService consumer -> creates default profile
+
+Login (gRPC)
+   |
+AuthService publishes UserLoggedInEvent
+   |-> AuditService consumer -> writes audit_logs row
 ```
 
-## Observability Flow
+## Observability
 
 ```
-Services (Auth, Profile, Audit)
-  ↓ (OTEL SDK - traces, metrics, logs)
-OTEL Collector (4317 gRPC, 4318 HTTP)
-  ├→ Prometheus (9090) → Query metrics
-  ├→ Tempo (3200) → Store traces
-  ├→ Jaeger (16686) → Trace UI
-  └→ Grafana (3000) → Unified dashboards
+Services (Core, Profile, Audit)
+  | (OpenTelemetry SDK: traces + metrics)
+  |-> /metrics endpoint  -> scraped by Prometheus (9090)
+  |-> OTLP :4317         -> OTel Collector -> Tempo (traces, 3200)
+                                            -> Grafana (3000) dashboards
+Serilog structured logs -> console (trace/span correlated)
 ```
 
-### Key Metrics
-- `auth_login_attempts_total{status}` - Login success/failure counter
-- `auth_login_duration_seconds` - Login latency histogram (p50, p95, p99)
-- `auth_active_sessions` - Active session gauge
-- `grpc_client_rpc_duration_seconds{service, method}` - gRPC latencies
-- `db_query_duration_seconds{statement}` - Database query performance
-
-### Grafana Dashboards (5)
-1. **Auth Service Dashboard** - Login metrics, latency, MFA adoption
-2. **Trace Explorer** - Distributed traces, dependency graph
-3. **Service Dependencies** - Inter-service health, gRPC success rates
-4. **Error Rate & SLO** - Error budget, uptime, alert thresholds
-5. **Resource Utilization** - CPU, memory, connection pools
+Provisioned in `deploy/observability/`:
+- `otel-collector-config.yaml` - OTLP receivers, batch processor, Tempo exporter
+- `tempo.yaml` - trace storage
+- `prometheus.yml` - scrape config for the three services
+- `alert-rules.yml` - ServiceDown, HighHttpErrorRate, HighRequestLatency
+- `grafana/provisioning/` - Prometheus + Tempo datasources and the "GameAuth Services Overview" dashboard
 
 ## Configuration
 
-### appsettings.json Structure
+Each service reads configuration from `appsettings.json`, overridable by environment variables
+(double-underscore syntax, e.g. `ConnectionStrings__PostgreSQL`).
+
 ```json
 {
   "ConnectionStrings": {
-	"PostgreSQL": "Host=localhost;Database=gameauth;...",
-	"Redis": "localhost:6379"
+    "PostgreSQL": "Host=localhost;Port=5432;Database=gameauth;Username=gameauth;Password=gameauth",
+    "Redis": "localhost:6379"
   },
-  "RabbitMQ": {
-	"Host": "localhost",
-	"Port": 5672
+  "Jwt": {
+    "Issuer": "GameAuth",
+    "Audience": "GameAuth.Clients",
+    "SigningKey": "CHANGE_ME_TO_A_SECURE_32_PLUS_CHARACTER_SIGNING_KEY",
+    "AccessTokenMinutes": 15,
+    "RefreshTokenDays": 7
   },
-  "GrpcEndpoints": {
-	"AuthService": "https://localhost:7001",
-	"ProfileService": "https://localhost:7002",
-	"AuditService": "https://localhost:7003"
-  },
-  "OpenTelemetry": {
-	"OtlpExporter": { "Endpoint": "http://localhost:4317" },
-	"Jaeger": { "Host": "localhost", "Port": 6831 },
-	"Prometheus": { "Port": 9090, "Path": "/metrics" }
-  },
-  "Authentication": {
-	"JwtSecret": "...",
-	"AccessTokenExpirationMinutes": 60,
-	"RefreshTokenExpirationDays": 7
-  }
+  "RabbitMQ": { "Host": "localhost", "Port": 5672, "Username": "guest", "Password": "guest" },
+  "OpenTelemetry": { "OtlpEndpoint": "http://localhost:4317" }
 }
 ```
 
-## Next Steps
+> Set a strong `Jwt:SigningKey` (>= 32 chars) for the Core service before any real deployment.
 
-### Remaining Implementation (Steps 5-40)
-1. Complete Infrastructure library (DbContext, repositories, cache, event bus)
-2. Create Core authentication service with JWT generation
-3. Create ProfileService & AuditService
-4. Configure OpenTelemetry instrumentation
-5. Create Docker Compose with full observability stack
-6. Create Grafana dashboards & Prometheus config
-7. Integration tests
+## Getting Started
 
-## Running Locally
+### Prerequisites
+- .NET 10 SDK
+- Docker Desktop (for the local stack)
+- `dotnet-ef` global tool (for migrations): `dotnet tool install --global dotnet-ef`
 
-```bash
-# Start infrastructure (PostgreSQL, Redis, RabbitMQ, Observability)
-docker-compose up -d
-
-# Run Auth Service
-cd src/GameAuth.Core
-dotnet run
-
-# Run Profile Service
-cd src/GameAuth.ProfileService
-dotnet run
-
-# Run Audit Service
-cd src/GameAuth.AuditService
-dotnet run
+### Run the full stack with Docker
+```powershell
+cd deploy
+docker compose up --build
 ```
 
-### Access Points
-- Auth API: https://localhost:7001
-- Profile API: https://localhost:7002
-- Audit API: https://localhost:7003
-- Grafana: http://localhost:3000 (admin/admin)
-- Prometheus: http://localhost:9090
-- Jaeger UI: http://localhost:16686
-- RabbitMQ Management: http://localhost:15672 (guest/guest)
+| Endpoint | URL |
+|----------|-----|
+| Core (Auth) gRPC | http://localhost:8080 |
+| Profile gRPC | http://localhost:8081 |
+| Audit gRPC | http://localhost:8082 |
+| Grafana | http://localhost:3000 (admin/admin) |
+| Prometheus | http://localhost:9090 |
+| RabbitMQ Management | http://localhost:15672 (guest/guest) |
 
-## Deployment (Kubernetes - Phase 2)
+### Run services locally
+```powershell
+# Start only the backing infrastructure
+cd deploy
+docker compose up -d postgres redis rabbitmq otel-collector tempo prometheus grafana
 
-Each service will have:
-- Deployment (3 replicas, HPA)
-- Service (ClusterIP for gRPC, LoadBalancer for external)
-- ConfigMap (non-sensitive config)
-- Secret (sensitive data)
-- NetworkPolicy (restrict inter-service traffic)
+# Apply database migrations
+cd ..
+dotnet ef database update --project src/GameAuth.Infrastructure --startup-project src/GameAuth.Core
+
+# Run each service (separate terminals)
+dotnet run --project src/GameAuth.Core
+dotnet run --project src/GameAuth.ProfileService
+dotnet run --project src/GameAuth.AuditService
+```
+
+## Testing
+
+```powershell
+dotnet test
+```
+
+| Test project | Coverage |
+|--------------|----------|
+| GameAuth.Core.Tests | Argon2 password hashing, TOTP MFA validation |
+| GameAuth.Infrastructure.Tests | UserRepository against SQLite in-memory |
+| GameAuth.ProfileService.Tests | UserProfile serialization / immutability |
+
+All current tests are unit tests (12 total). End-to-end gRPC integration tests are not yet implemented.
 
 ## Security Features
 
-- JWT token with RS256 signing
-- TOTP MFA with backup codes
-- Rate limiting (global + per-user + per-endpoint)
-- Distributed token revocation via Redis
-- Password hashing with Argon2
-- HTTPS/TLS everywhere
-- gRPC channel encryption (mTLS in production)
+Implemented:
+- Argon2id password hashing (per-hash salt, constant-time verification)
+- JWT access tokens (HS256) + opaque refresh tokens
+- TOTP-based MFA (Otp.NET)
+- Distributed token revocation and session storage via Redis
+- Redis-backed distributed IP rate limiting (enforced consistently across replicas)
+- Correlation-id propagation and centralized exception handling
 
-## Scalability Targets
+Rate limiting is wired centrally in `ServiceDefaults`, so all services inherit it. Defaults allow
+20 requests/second and 300 requests/minute per client IP, overridable via an `IpRateLimiting`
+(and optional `IpRateLimitPolicies`) section in a service's `appsettings.json`.
 
-- **Users**: Multi-million concurrent users
-- **Throughput**: 10,000+ auth requests/second
-- **Latency**: p99 < 200ms for login
-- **Availability**: 99.99% uptime (4 nines)
-- **Horizontal Scaling**: 3-100 replicas per service
+## Known Gaps and Roadmap
 
-## License
+The following items from the original design are not yet implemented:
+- **Integration tests** - only unit tests exist today
+- **RS256 JWT signing** - current implementation uses symmetric HS256
+- **MFA backup codes**
+- **Jaeger UI** - traces are stored in Tempo and viewed via Grafana instead
+- **Kubernetes manifests** - deployment is Docker Compose only (K8s is a future phase)
+- **Resilience policies** - Polly packages are available but circuit breakers/retries are not configured
 
-MIT License - See LICENSE file for details
+Contributions targeting these gaps are welcome.

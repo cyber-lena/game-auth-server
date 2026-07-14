@@ -23,6 +23,7 @@ public static class ServiceDefaultsExtensions
     {
         services.AddOpenTelemetryDefaults(configuration, serviceName);
         services.AddHealthChecks();
+        services.AddRateLimitingDefaults(configuration);
 
         return services;
     }
@@ -34,6 +35,7 @@ public static class ServiceDefaultsExtensions
     /// </summary>
     public static WebApplication UseServiceDefaults(this WebApplication app)
     {
+        app.UseRateLimitingDefaults();
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseMiddleware<ExceptionHandlingMiddleware>();
 
