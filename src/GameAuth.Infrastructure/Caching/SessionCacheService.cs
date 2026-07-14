@@ -1,49 +1,56 @@
+using System.Text.Json;
 using StackExchange.Redis;
 
 namespace GameAuth.Infrastructure.Caching;
 
+public record SessionState
+{
+    public required long UserId { get; init; }
+    public required string SessionId { get; init; }
+    public required string RefreshToken { get; init; }
+    public DateTime ExpiresAt { get; init; }
+    public string? IpAddress { get; init; }
+    public string? UserAgent { get; init; }
+}
+
 public interface ISessionCacheService
 {
-    Task<string?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default);
-    Task SetSessionAsync(string sessionId, string userId, TimeSpan expiration, CancellationToken cancellationToken = default);
-    Task RemoveSessionAsync(string sessionId, CancellationToken cancellationToken = default);
-    Task<bool> SessionExistsAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task<SessionState?> GetSessionAsync(string sessionKey, CancellationToken cancellationToken = default);
+    Task SetSessionAsync(string sessionKey, SessionState session, TimeSpan expiration, CancellationToken cancellationToken = default);
+    Task RemoveSessionAsync(string sessionKey, CancellationToken cancellationToken = default);
+    Task<bool> SessionExistsAsync(string sessionKey, CancellationToken cancellationToken = default);
 }
 
 public class SessionCacheService : ISessionCacheService
 {
-    private readonly IConnectionMultiplexer _redis;
     private readonly IDatabase _database;
     private const string SessionPrefix = "session:";
 
     public SessionCacheService(IConnectionMultiplexer redis)
     {
-        _redis = redis;
         _database = redis.GetDatabase();
     }
 
-    public async Task<string?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<SessionState?> GetSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
     {
-        var key = $"{SessionPrefix}{sessionId}";
-        var value = await _database.StringGetAsync(key);
-        return value.IsNullOrEmpty ? null : (string)value!;
+        var value = await _database.StringGetAsync(Key(sessionKey));
+        return value.IsNullOrEmpty ? null : JsonSerializer.Deserialize<SessionState>((string)value!);
     }
 
-    public async Task SetSessionAsync(string sessionId, string userId, TimeSpan expiration, CancellationToken cancellationToken = default)
+    public async Task SetSessionAsync(string sessionKey, SessionState session, TimeSpan expiration, CancellationToken cancellationToken = default)
     {
-        var key = $"{SessionPrefix}{sessionId}";
-        await _database.StringSetAsync(key, userId, expiration);
+        await _database.StringSetAsync(Key(sessionKey), JsonSerializer.Serialize(session), expiration);
     }
 
-    public async Task RemoveSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task RemoveSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
     {
-        var key = $"{SessionPrefix}{sessionId}";
-        await _database.KeyDeleteAsync(key);
+        await _database.KeyDeleteAsync(Key(sessionKey));
     }
 
-    public async Task<bool> SessionExistsAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<bool> SessionExistsAsync(string sessionKey, CancellationToken cancellationToken = default)
     {
-        var key = $"{SessionPrefix}{sessionId}";
-        return await _database.KeyExistsAsync(key);
+        return await _database.KeyExistsAsync(Key(sessionKey));
     }
+
+    private static string Key(string sessionKey) => $"{SessionPrefix}{sessionKey}";
 }

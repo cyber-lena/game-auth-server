@@ -5,9 +5,7 @@
     <Project Path="src/GameAuth.Infrastructure/GameAuth.Infrastructure.csproj" />
     <Project Path="src/GameAuth.ProfileService/GameAuth.ProfileService.csproj" />
     <Project Path="src/GameAuth.Protos/GameAuth.Protos.csproj" />
-    <Project Path="src/GameAuth.ServiceDefaults/GameAuth.ServiceDefaults.csproj">
-      <Build Solution="Debug|*" Project="false" />
-    </Project>
+    <Project Path="src/GameAuth.ServiceDefaults/GameAuth.ServiceDefaults.csproj" />
     <Project Path="src/GameAuth.Shared/GameAuth.Shared.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -17,3 +15,4 @@
   </Folder>
   <Project Path="GameAuthServer/GameAuthServer.csproj" />
 </Solution>
+

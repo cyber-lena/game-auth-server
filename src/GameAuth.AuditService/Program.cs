@@ -1,17 +1,31 @@
+using GameAuth.AuditService.Consumers;
+using GameAuth.AuditService.Services;
+using GameAuth.AuditService.Storage;
+using GameAuth.Infrastructure;
+using GameAuth.ServiceDefaults;
+
+const string ServiceName = "GameAuth.AuditService";
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Host.UseSerilogDefaults(ServiceName);
+
+builder.Services.AddServiceDefaults(builder.Configuration, ServiceName);
+builder.Services.AddInfrastructure(builder.Configuration, mt =>
+{
+    mt.AddConsumer<UserLoggedInAuditConsumer>();
+    mt.AddConsumer<UserRegisteredAuditConsumer>();
+    mt.AddConsumer<SecurityEventAuditConsumer>();
+});
+
+builder.Services.AddScoped<IAuditLogStore, AuditLogStore>();
+builder.Services.AddGrpc();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
+app.UseServiceDefaults();
 
-app.UseHttpsRedirection();
+app.MapGrpcService<AuditGrpcService>();
 
 app.Run();
+

@@ -1,17 +1,29 @@
+using GameAuth.Infrastructure;
+using GameAuth.ProfileService.Consumers;
+using GameAuth.ProfileService.Services;
+using GameAuth.ProfileService.Storage;
+using GameAuth.ServiceDefaults;
+
+const string ServiceName = "GameAuth.ProfileService";
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Host.UseSerilogDefaults(ServiceName);
+
+builder.Services.AddServiceDefaults(builder.Configuration, ServiceName);
+builder.Services.AddInfrastructure(builder.Configuration, mt =>
+{
+    mt.AddConsumer<UserRegisteredConsumer>();
+});
+
+builder.Services.AddScoped<IProfileStore, RedisProfileStore>();
+builder.Services.AddGrpc();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
+app.UseServiceDefaults();
 
-app.UseHttpsRedirection();
+app.MapGrpcService<ProfileGrpcService>();
 
 app.Run();
+

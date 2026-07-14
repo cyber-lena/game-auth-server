@@ -7,13 +7,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="Serilog.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\GameAuth.Shared\GameAuth.Shared.csproj" />
     <ProjectReference Include="..\GameAuth.Infrastructure\GameAuth.Infrastructure.csproj" />
     <ProjectReference Include="..\GameAuth.Protos\GameAuth.Protos.csproj" />
+    <ProjectReference Include="..\GameAuth.ServiceDefaults\GameAuth.ServiceDefaults.csproj" />
   </ItemGroup>
 
 </Project>
