@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GameAuth.AuditService/GameAuth.AuditService.csproj" />
+    <Project Path="src/GameAuth.Core/GameAuth.Core.csproj" />
+    <Project Path="src/GameAuth.Infrastructure/GameAuth.Infrastructure.csproj" />
+    <Project Path="src/GameAuth.ProfileService/GameAuth.ProfileService.csproj" />
+    <Project Path="src/GameAuth.Protos/GameAuth.Protos.csproj" />
+    <Project Path="src/GameAuth.ServiceDefaults/GameAuth.ServiceDefaults.csproj">
+      <Build Solution="Debug|*" Project="false" />
+    </Project>
+    <Project Path="src/GameAuth.Shared/GameAuth.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GameAuth.Core.Tests/GameAuth.Core.Tests.csproj" />
+    <Project Path="tests/GameAuth.Infrastructure.Tests/GameAuth.Infrastructure.Tests.csproj" />
+    <Project Path="tests/GameAuth.ProfileService.Tests/GameAuth.ProfileService.Tests.csproj" />
+  </Folder>
+  <Project Path="GameAuthServer/GameAuthServer.csproj" />
+</Solution>

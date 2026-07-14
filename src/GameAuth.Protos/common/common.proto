@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option csharp_namespace = "GameAuth.Protos.Common";
+
+package gameauth.common;
+
+message Empty {}
+
+message TimestampMessage {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+message ErrorDetails {
+  string error_code = 1;
+  string message = 2;
+  string details = 3;
+}
+
+message UserIdentity {
+  int64 user_id = 1;
+  string username = 2;
+  string email = 3;
+}

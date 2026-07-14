@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	<TargetFramework>net10.0</TargetFramework>
+	<ImplicitUsings>enable</ImplicitUsings>
+	<Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+	<FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+	<ProjectReference Include="..\GameAuth.Shared\GameAuth.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+	<PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+	<PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+	<PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+	<PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+	<PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+	<PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
+	<PackageReference Include="Serilog.AspNetCore" />
+	<PackageReference Include="Serilog.Enrichers.Span" />
+	<PackageReference Include="Serilog.Sinks.Console" />
+	<PackageReference Include="Serilog.Formatting.Compact" />
+	<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+	<PackageReference Include="AspNetCoreRateLimit" />
+  </ItemGroup>
+
+</Project>

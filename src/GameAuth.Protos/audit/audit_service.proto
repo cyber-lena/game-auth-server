@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+import "common/common.proto";
+
+option csharp_namespace = "GameAuth.Protos.Audit";
+
+package gameauth.audit;
+
+service AuditService {
+  rpc LogEvent(LogEventRequest) returns (LogEventResponse);
+  rpc QueryLogs(QueryLogsRequest) returns (QueryLogsResponse);
+  rpc GetSecurityEvents(SecurityEventsRequest) returns (SecurityEventsResponse);
+}
+
+message LogEventRequest {
+  int64 user_id = 1;
+  string event_type = 2;
+  string event_source = 3;
+  string ip_address = 4;
+  string user_agent = 5;
+  string status = 6;
+  map<string, string> metadata = 7;
+}
+
+message LogEventResponse {
+  bool success = 1;
+  string message = 2;
+  int64 event_id = 3;
+}
+
+message QueryLogsRequest {
+  int64 user_id = 1;
+  string event_type = 2;
+  int64 from_timestamp_seconds = 3;
+  int64 to_timestamp_seconds = 4;
+  int32 page_number = 5;
+  int32 page_size = 6;
+}
+
+message QueryLogsResponse {
+  bool success = 1;
+  repeated AuditLogEntry logs = 2;
+  int32 total_count = 3;
+}
+
+message AuditLogEntry {
+  int64 id = 1;
+  int64 user_id = 2;
+  string event_type = 3;
+  string event_source = 4;
+  string ip_address = 5;
+  string user_agent = 6;
+  string status = 7;
+  int64 timestamp_seconds = 8;
+  map<string, string> metadata = 9;
+}
+
+message SecurityEventsRequest {
+  string severity = 1;
+  int64 from_timestamp_seconds = 2;
+  int64 to_timestamp_seconds = 3;
+  int32 page_number = 4;
+  int32 page_size = 5;
+}
+
+message SecurityEventsResponse {
+  bool success = 1;
+  repeated SecurityEventEntry events = 2;
+  int32 total_count = 3;
+}
+
+message SecurityEventEntry {
+  int64 id = 1;
+  string event_type = 2;
+  string severity = 3;
+  int64 user_id = 4;
+  string ip_address = 5;
+  string description = 6;
+  int64 timestamp_seconds = 7;
+}
