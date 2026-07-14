@@ -107,6 +107,7 @@ GameAuthServer/
 - `UseSerilogDefaults` - structured logging enriched with trace/span context
 - OpenTelemetry tracing/metrics with Prometheus scraping and optional OTLP export
 - `AddRateLimitingDefaults` / `UseRateLimitingDefaults` - Redis-backed distributed IP rate limiting (AspNetCoreRateLimit) shared across all services and replicas
+- `AddResilienceDefaults` / `AddResilientGrpcClient<T>` - shared Polly pipeline (exponential-backoff retries, circuit breaker, per-attempt and total timeouts) for gRPC/HTTP inter-service calls
 
 ### GameAuth.Core (Authentication)
 - `Argon2PasswordHasher` - Argon2id hashing with per-hash salt and constant-time verification
@@ -135,6 +136,7 @@ GameAuthServer/
 | Messaging | RabbitMQ + MassTransit |
 | RPC | gRPC (Grpc.AspNetCore) |
 | Rate limiting | AspNetCoreRateLimit + Redis distributed store |
+| Resilience | Polly v8 (retry, circuit breaker, timeout) + MassTransit retry/redelivery |
 | Security | JWT (RS256, HS256 fallback), Argon2id (Konscious), TOTP (Otp.NET) |
 | Observability | OpenTelemetry, Prometheus, Tempo, Grafana, Serilog |
 
@@ -341,6 +343,7 @@ Implemented:
 - Distributed token revocation and session storage via Redis
 - Redis-backed distributed IP rate limiting (enforced consistently across replicas)
 - Correlation-id propagation and centralized exception handling
+- Resilience policies: Polly retries/circuit breaker/timeouts for gRPC/HTTP calls, plus MassTransit message retry, delayed redelivery, and a bus kill-switch
 
 Rate limiting is wired centrally in `ServiceDefaults`, so all services inherit it. Defaults allow
 20 requests/second and 300 requests/minute per client IP, overridable via an `IpRateLimiting`
@@ -353,6 +356,5 @@ The following items from the original design are not yet implemented:
 - **MFA backup codes**
 - **Jaeger UI** - traces are stored in Tempo and viewed via Grafana instead
 - **Kubernetes manifests** - deployment is Docker Compose only (K8s is a future phase)
-- **Resilience policies** - Polly packages are available but circuit breakers/retries are not configured
 
 Contributions targeting these gaps are welcome.

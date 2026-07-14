@@ -1,4 +1,5 @@
 using GameAuth.ServiceDefaults.Middleware;
+using GameAuth.ServiceDefaults.Resilience;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,6 +25,7 @@ public static class ServiceDefaultsExtensions
         services.AddOpenTelemetryDefaults(configuration, serviceName);
         services.AddHealthChecks();
         services.AddRateLimitingDefaults(configuration);
+        services.AddResilienceDefaults(configuration);
 
         return services;
     }

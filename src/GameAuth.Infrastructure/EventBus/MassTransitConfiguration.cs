@@ -30,6 +30,26 @@ public static class MassTransitConfiguration
                     h.Password(password);
                 });
 
+                // Bus-level circuit breaker: stops delivery to failing consumers
+                // when the failure rate spikes, giving downstream systems time to recover.
+                cfg.UseKillSwitch(options => options
+                    .SetActivationThreshold(10)
+                    .SetTripThreshold(0.5)
+                    .SetRestartTimeout(TimeSpan.FromMinutes(1)));
+
+                // In-process immediate retries with exponential backoff for transient faults.
+                cfg.UseMessageRetry(r => r.Exponential(
+                    retryLimit: 5,
+                    minInterval: TimeSpan.FromMilliseconds(500),
+                    maxInterval: TimeSpan.FromSeconds(30),
+                    intervalDelta: TimeSpan.FromSeconds(2)));
+
+                // Delayed redelivery for longer outages (moves the message back to the queue later).
+                cfg.UseDelayedRedelivery(r => r.Intervals(
+                    TimeSpan.FromSeconds(30),
+                    TimeSpan.FromMinutes(2),
+                    TimeSpan.FromMinutes(5)));
+
                 // Configure endpoints for consumers
                 cfg.ConfigureEndpoints(context);
             });
