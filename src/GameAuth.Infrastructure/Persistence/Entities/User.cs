@@ -13,4 +13,5 @@ public class User
     public MfaSettings? MfaSettings { get; set; }
     public ICollection<Session> Sessions { get; set; } = new List<Session>();
     public ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
+    public ICollection<ExternalLogin> ExternalLogins { get; set; } = new List<ExternalLogin>();
 }

@@ -10,6 +10,8 @@ public interface IUserRepository : IRepository<User>
     Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
     Task<User?> GetUserWithCredentialAsync(long userId, CancellationToken cancellationToken = default);
     Task<User?> GetUserWithMfaSettingsAsync(long userId, CancellationToken cancellationToken = default);
+    Task<User?> GetByExternalLoginAsync(string provider, string providerUserId, CancellationToken cancellationToken = default);
+    Task<User?> GetUserWithExternalLoginsAsync(long userId, CancellationToken cancellationToken = default);
     Task<bool> UsernameExistsAsync(string username, CancellationToken cancellationToken = default);
     Task<bool> EmailExistsAsync(string email, CancellationToken cancellationToken = default);
 }
@@ -46,6 +48,22 @@ public class UserRepository : BaseRepository<User>, IUserRepository
     {
         return await _dbContext.Users
             .Include(u => u.MfaSettings)
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+    }
+
+    public async Task<User?> GetByExternalLoginAsync(string provider, string providerUserId, CancellationToken cancellationToken = default)
+    {
+        var login = await _dbContext.ExternalLogins
+            .Include(e => e.User)
+            .FirstOrDefaultAsync(e => e.Provider == provider && e.ProviderUserId == providerUserId, cancellationToken);
+
+        return login?.User;
+    }
+
+    public async Task<User?> GetUserWithExternalLoginsAsync(long userId, CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Users
+            .Include(u => u.ExternalLogins)
             .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
     }
 

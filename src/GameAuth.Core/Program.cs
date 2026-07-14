@@ -1,5 +1,6 @@
 using GameAuth.Core.Configuration;
 using GameAuth.Core.Security;
+using GameAuth.Core.Security.ExternalIdentity;
 using GameAuth.Core.Services;
 using GameAuth.Infrastructure;
 using GameAuth.ServiceDefaults;
@@ -24,6 +25,10 @@ builder.Services.AddSingleton(jwtKeyProvider);
 builder.Services.AddSingleton<IPasswordHasher, Argon2PasswordHasher>();
 builder.Services.AddSingleton<ITokenService, JwtTokenService>();
 builder.Services.AddSingleton<IMfaService, TotpMfaService>();
+
+builder.Services.Configure<ExternalAuthOptions>(builder.Configuration.GetSection(ExternalAuthOptions.SectionName));
+builder.Services.AddSingleton<IExternalIdentityVerifier, GoogleIdentityVerifier>();
+builder.Services.AddSingleton<ExternalIdentityVerifierRegistry>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

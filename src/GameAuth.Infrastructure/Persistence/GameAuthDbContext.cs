@@ -14,6 +14,7 @@ public class GameAuthDbContext : DbContext
     public DbSet<MfaSettings> MfaSettings => Set<MfaSettings>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,6 +26,7 @@ public class GameAuthDbContext : DbContext
         modelBuilder.Entity<MfaSettings>().ToTable("mfa_settings");
         modelBuilder.Entity<Session>().ToTable("sessions");
         modelBuilder.Entity<AuditLog>().ToTable("audit_logs");
+        modelBuilder.Entity<ExternalLogin>().ToTable("external_logins");
 
         // User configuration
         modelBuilder.Entity<User>(entity =>
@@ -58,6 +60,11 @@ public class GameAuthDbContext : DbContext
                 .WithOne(a => a.User)
                 .HasForeignKey(a => a.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasMany(e => e.ExternalLogins)
+                .WithOne(x => x.User)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Credential configuration
@@ -118,6 +125,23 @@ public class GameAuthDbContext : DbContext
             // Composite indexes per README
             entity.HasIndex(e => new { e.UserId, e.Timestamp }).HasDatabaseName("idx_audit_logs_user_id_timestamp");
             entity.HasIndex(e => new { e.EventType, e.Timestamp }).HasDatabaseName("idx_audit_logs_event_type_timestamp");
+        });
+
+        // ExternalLogin configuration
+        modelBuilder.Entity<ExternalLogin>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.Provider).HasColumnName("provider").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.ProviderUserId).HasColumnName("provider_user_id").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Email).HasColumnName("email").HasMaxLength(255);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+            entity.HasIndex(e => new { e.Provider, e.ProviderUserId })
+                .IsUnique()
+                .HasDatabaseName("idx_external_logins_provider_provider_user_id");
+            entity.HasIndex(e => e.Email).HasDatabaseName("idx_external_logins_email");
         });
     }
 }

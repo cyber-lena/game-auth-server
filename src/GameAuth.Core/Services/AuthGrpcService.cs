@@ -1,5 +1,6 @@
 using GameAuth.Core.Configuration;
 using GameAuth.Core.Security;
+using GameAuth.Core.Security.ExternalIdentity;
 using GameAuth.Infrastructure.Caching;
 using GameAuth.Infrastructure.Persistence.Entities;
 using GameAuth.Infrastructure.Persistence.Repositories;
@@ -22,6 +23,7 @@ public class AuthGrpcService : AuthService.AuthServiceBase
     private readonly ITokenRevocationService _tokenRevocation;
     private readonly IEventBus _eventBus;
     private readonly JwtOptions _jwtOptions;
+    private readonly ExternalIdentityVerifierRegistry _externalVerifiers;
     private readonly ILogger<AuthGrpcService> _logger;
 
     public AuthGrpcService(
@@ -34,6 +36,7 @@ public class AuthGrpcService : AuthService.AuthServiceBase
         ITokenRevocationService tokenRevocation,
         IEventBus eventBus,
         IOptions<JwtOptions> jwtOptions,
+        ExternalIdentityVerifierRegistry externalVerifiers,
         ILogger<AuthGrpcService> logger)
     {
         _users = users;
@@ -45,6 +48,7 @@ public class AuthGrpcService : AuthService.AuthServiceBase
         _tokenRevocation = tokenRevocation;
         _eventBus = eventBus;
         _jwtOptions = jwtOptions.Value;
+        _externalVerifiers = externalVerifiers;
         _logger = logger;
     }
 
@@ -75,6 +79,124 @@ public class AuthGrpcService : AuthService.AuthServiceBase
         }, context.CancellationToken);
 
         return new RegisterResponse { Success = true, Message = "Registration successful", UserId = user.Id };
+    }
+
+    public override async Task<LoginResponse> ExternalLogin(ExternalLoginRequest request, ServerCallContext context)
+    {
+        var verifier = _externalVerifiers.Resolve(request.Provider);
+        if (verifier is null)
+        {
+            return new LoginResponse { Success = false, Message = $"Unsupported provider '{request.Provider}'" };
+        }
+
+        var identity = await verifier.VerifyAsync(request.IdToken, context.CancellationToken);
+        if (identity is null)
+        {
+            return new LoginResponse { Success = false, Message = "Invalid or unverified provider token" };
+        }
+
+        // 1. Existing external login link.
+        var user = await _users.GetByExternalLoginAsync(identity.Provider, identity.ProviderUserId, context.CancellationToken);
+        var isNewUser = false;
+
+        // 2. Otherwise auto-link to an existing account by verified email.
+        if (user is null && identity.EmailVerified && !string.IsNullOrWhiteSpace(identity.Email))
+        {
+            user = await _users.GetByEmailAsync(identity.Email, context.CancellationToken);
+            if (user is not null)
+            {
+                await LinkExternalLoginAsync(user, identity, context.CancellationToken);
+            }
+        }
+
+        // 3. Otherwise auto-provision a new passwordless user.
+        if (user is null)
+        {
+            user = await ProvisionExternalUserAsync(identity, context.CancellationToken);
+            isNewUser = true;
+        }
+
+        // Enforce MFA if the account has it verified.
+        var mfaUser = await _users.GetUserWithMfaSettingsAsync(user.Id, context.CancellationToken);
+        var mfaEnabled = mfaUser?.MfaSettings is { Verified: true };
+        if (mfaEnabled)
+        {
+            if (string.IsNullOrEmpty(request.MfaCode))
+            {
+                return new LoginResponse { Success = false, Message = "MFA code required", MfaRequired = true };
+            }
+
+            if (!_mfaService.ValidateCode(mfaUser!.MfaSettings!.MfaSecret, request.MfaCode))
+            {
+                return new LoginResponse { Success = false, Message = "Invalid MFA code", MfaRequired = true };
+            }
+        }
+
+        if (isNewUser)
+        {
+            await _eventBus.PublishAsync(new UserRegisteredEvent
+            {
+                CorrelationId = context.GetHttpContext()?.TraceIdentifier ?? Guid.NewGuid().ToString(),
+                UserId = user.Id,
+                Username = user.Username,
+                Email = user.Email
+            }, context.CancellationToken);
+        }
+
+        return await IssueSessionAsync(user, mfaEnabled, context);
+    }
+
+    private async Task LinkExternalLoginAsync(User user, ExternalIdentityResult identity, CancellationToken cancellationToken)
+    {
+        user.ExternalLogins.Add(new ExternalLogin
+        {
+            UserId = user.Id,
+            Provider = identity.Provider,
+            ProviderUserId = identity.ProviderUserId,
+            Email = identity.Email
+        });
+
+        await _users.UpdateAsync(user, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<User> ProvisionExternalUserAsync(ExternalIdentityResult identity, CancellationToken cancellationToken)
+    {
+        var email = identity.Email ?? $"{identity.ProviderUserId}@{identity.Provider}.local";
+        var username = await GenerateUniqueUsernameAsync(email, cancellationToken);
+
+        var user = new User { Username = username, Email = email };
+        user.ExternalLogins.Add(new ExternalLogin
+        {
+            Provider = identity.Provider,
+            ProviderUserId = identity.ProviderUserId,
+            Email = identity.Email
+        });
+
+        await _users.AddAsync(user, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return user;
+    }
+
+    private async Task<string> GenerateUniqueUsernameAsync(string email, CancellationToken cancellationToken)
+    {
+        var localPart = email.Split('@')[0];
+        var baseName = new string(localPart.Where(c => char.IsLetterOrDigit(c) || c is '.' or '_' or '-').ToArray());
+        if (string.IsNullOrWhiteSpace(baseName))
+        {
+            baseName = "user";
+        }
+
+        var candidate = baseName;
+        var suffix = 0;
+        while (await _users.UsernameExistsAsync(candidate, cancellationToken))
+        {
+            suffix++;
+            candidate = $"{baseName}{suffix}";
+        }
+
+        return candidate;
     }
 
     public override async Task<LoginResponse> Login(LoginRequest request, ServerCallContext context)

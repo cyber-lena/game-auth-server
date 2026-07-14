@@ -91,7 +91,7 @@ GameAuthServer/
 - **Models**: `Result<T>`, `PagedResult<T>`
 
 ### GameAuth.Protos
-- `auth/auth_service.proto` - Login, Register, ValidateToken, RefreshToken, Logout, InitiateMfaChallenge
+- `auth/auth_service.proto` - Login, Register, ExternalLogin, ValidateToken, RefreshToken, Logout, InitiateMfaChallenge
 - `profile/profile_service.proto` - GetProfile, UpdateProfile, GetSettings, UpdateSettings
 - `audit/audit_service.proto` - LogEvent, QueryLogs, GetSecurityEvents
 - `common/common.proto` - Shared types (UserIdentity, ErrorDetails, TimestampMessage, Empty)
@@ -116,7 +116,8 @@ GameAuthServer/
 - `Argon2PasswordHasher` - Argon2id hashing with per-hash salt and constant-time verification
 - `JwtTokenService` - access token generation (RS256, HS256 fallback) + refresh token generation + validation
 - `TotpMfaService` - TOTP secret generation and code validation (Otp.NET)
-- `AuthGrpcService` - Register, Login (with MFA), ValidateToken, Logout, RefreshToken, InitiateMfaChallenge
+- `AuthGrpcService` - Register, Login (with MFA), ExternalLogin (Google), ValidateToken, Logout, RefreshToken, InitiateMfaChallenge
+- `GoogleIdentityVerifier` (behind the extensible `IExternalIdentityVerifier` abstraction) - verifies Google ID tokens server-side and auto-links or provisions passwordless users
 - Publishes `UserRegisteredEvent` / `UserLoggedInEvent`; JWT bearer auth configured
 
 ### GameAuth.ProfileService
@@ -182,6 +183,22 @@ CREATE TABLE mfa_settings (
     verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+```
+
+### external_logins
+```sql
+CREATE TABLE external_logins (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL,
+    provider_user_id VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX idx_external_logins_provider_provider_user_id
+    ON external_logins(provider, provider_user_id);
+CREATE INDEX idx_external_logins_email ON external_logins(email);
 ```
 
 ### sessions
@@ -277,6 +294,7 @@ Each service reads configuration from `appsettings.json`, overridable by environ
     "RefreshTokenDays": 7
   },
   "RabbitMQ": { "Host": "localhost", "Port": 5672, "Username": "guest", "Password": "guest" },
+  "ExternalAuth": { "Google": { "Enabled": true, "ClientId": "YOUR_GOOGLE_OAUTH_CLIENT_ID" } },
   "OpenTelemetry": { "OtlpEndpoint": "http://localhost:4317" }
 }
 ```
@@ -284,6 +302,22 @@ Each service reads configuration from `appsettings.json`, overridable by environ
 > Generate an RSA key pair for the Core service before any real deployment (see
 > [`src/GameAuth.Core/keys/README.md`](src/GameAuth.Core/keys/README.md)). To use symmetric signing
 > instead, set `Jwt:Algorithm` to `HS256` and provide a `Jwt:SigningKey` of at least 32 characters.
+
+### External login (Google)
+
+Clients authenticate by obtaining a **Google ID token** (via Google Sign-In on the client) and calling
+the `AuthService.ExternalLogin` RPC with `provider = "google"` and the `id_token`. The server validates
+the token with `Google.Apis.Auth`, checking the audience against `ExternalAuth:Google:ClientId`. Behavior:
+
+- If the provider identity is already linked, the existing user is signed in.
+- Otherwise, if the token's **verified** email matches an existing account, the external login is
+  auto-linked to it.
+- Otherwise a new **passwordless** user is provisioned (username derived from the email) and a
+  `UserRegisteredEvent` is published so Profile/Audit services provision as usual.
+- MFA is still enforced when the target account has verified MFA enabled.
+
+The `IExternalIdentityVerifier` abstraction makes it straightforward to add more providers (Apple,
+Facebook, etc.) later.
 
 ## Getting Started
 
@@ -343,6 +377,7 @@ Implemented:
 - Argon2id password hashing (per-hash salt, constant-time verification)
 - JWT access tokens (RS256 asymmetric signing, HS256 fallback) + opaque refresh tokens
 - TOTP-based MFA (Otp.NET)
+- External identity login/registration with Google (server-verified ID tokens via `Google.Apis.Auth`; extensible to other providers)
 - Distributed token revocation and session storage via Redis
 - Redis-backed distributed IP rate limiting (enforced consistently across replicas)
 - Correlation-id propagation and centralized exception handling

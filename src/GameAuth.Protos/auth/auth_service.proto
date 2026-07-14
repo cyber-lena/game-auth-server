@@ -9,6 +9,7 @@ package gameauth.auth;
 service AuthService {
   rpc Login(LoginRequest) returns (LoginResponse);
   rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc ExternalLogin(ExternalLoginRequest) returns (LoginResponse);
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
   rpc RefreshToken(RefreshTokenRequest) returns (TokenResponse);
@@ -43,6 +44,12 @@ message RegisterResponse {
   string message = 2;
   int64 user_id = 3;
   gameauth.common.ErrorDetails error = 4;
+}
+
+message ExternalLoginRequest {
+  string provider = 1;
+  string id_token = 2;
+  string mfa_code = 3;
 }
 
 message ValidateTokenRequest {
