@@ -3,6 +3,8 @@
 A production-grade, microservices-based authentication platform built on **.NET 10**, designed for
 high-throughput game backends with full observability, event-driven integration, and container-based deployment.
 
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-ffdd00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/alenaerdem)
+
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
 - [Solution Structure](#solution-structure)
@@ -16,6 +18,7 @@ high-throughput game backends with full observability, event-driven integration,
 - [Testing](#testing)
 - [Security Features](#security-features)
 - [Known Gaps and Roadmap](#known-gaps-and-roadmap)
+- [Support](#support)
 
 ## Architecture Overview
 
@@ -356,5 +359,14 @@ The following items from the original design are not yet implemented:
 - **MFA backup codes**
 - **Jaeger UI** - traces are stored in Tempo and viewed via Grafana instead
 - **Kubernetes manifests** - deployment is Docker Compose only (K8s is a future phase)
+
+## Support
+
+If this project helps you or you'd like to support its continued development, consider buying me a coffee.
+Every contribution is appreciated and helps keep the project maintained. ☕
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-ffdd00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/alenaerdem)
+
+> https://buymeacoffee.com/alenaerdem
 
 Contributions targeting these gaps are welcome.
